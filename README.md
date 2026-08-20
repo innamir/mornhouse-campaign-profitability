@@ -17,13 +17,11 @@
 
 ## 2. Аудит вихідних даних (Data Profiling)
 
-Мета етапу: зрозуміти grain, обсяг, діапазон дат і якість потенційних ключів кожної таблиці окремо, до будь-яких JOIN.
+Мета етапу: зрозуміти grain, обсяг, діапазон дат і якість потенційних ключів кожної таблиці окремо, до будь-яких JOIN. Усі запити — в `sql/01_profiling.sql`, з коментарями, що пояснюють кожен крок і його результат.
 
 ### 2.1 non_org_installs_report
 
-**Query:** `sql/01_profiling.sql`
-### 2.1 non_org_installs_report
-
+**Query 1 — базові метрики:** `sql/01_profiling.sql` — секція `non_org_installs_report`
 | min_install_date | max_install_date | row_count | distinct_campaigns | distinct_media_sources |
 |---|---|---|---|---|
 | 2026-06-01 | 2026-07-26 | 777724 | 54 | 3 |
@@ -34,51 +32,23 @@
 | 777724 | 0 | 0 | 489544 | 473477 | 777724 | 777724 | 0 | 0 |
 
 **Висновок:**
-- Grain таблиці: одна подія атрибутованого інсталу.
-- Діапазон дат (2026-06-01 – 2026-07-26) узгоджений з іншими таблицями (див. 2.2).
-- `analytics_installation_id` і `appsflyer_id` — повністю NULL, непридатні як join-ключ, попри те, що останній зазвичай головний ключ AppsFlyer-даних.
-- `advertising_id` — заповнений на 63%, робочий, але з відчутною втратою.
-- **`firebase_analytic_app_id` — 100% заповнений, унікальний на рядок. Найсильніший кандидат на join-ключ рівня пристрою.** Узгоджується з поведінкою того ж поля в ad_revenue_raw (~22 повтори на значення). Реальний value-level overlap між таблицями — перевірити в Join Key Mapping.
-- 54 кампанії, 3 media_source — орієнтир для звірки з cost_table (розбіжність 48 vs 54, див. 2.2).
+- Grain: одна подія атрибутованого інсталу.
+- Діапазон дат (2026-06-01 – 2026-07-26) — базовий орієнтир для звірки з іншими таблицями.
+- `analytics_installation_id` і `appsflyer_id` — 100% NULL, непридатні як join-ключ.
+- `advertising_id` — 63% заповнений, робочий, але з відчутною втратою.
+- **`firebase_analytic_app_id` — 100% заповнений, унікальний на рядок. Найсильніший кандидат на join-ключ рівня пристрою.**
+- 54 кампанії, 3 media_source — орієнтир для звірки з cost_table.
 
-**Гіпотези, що виникли:** див. розділ 3, пункти №1 (оновлено), №5 (новий).
+**Гіпотези, що виникли:** розділ 3, №1 (оновлено), №5 (новий).
 
 ### 2.2 cost_table
 
-**Query:** `sql/01_profiling.sql`
-
-```sql
-SELECT
-  MIN(date) AS min_date,
-  MAX(date) AS max_date,
-  COUNT(*) AS row_count,
-  COUNT(DISTINCT app_id) AS distinct_apps,
-  COUNT(DISTINCT campaign_id) AS distinct_campaigns,
-  COUNT(DISTINCT media_source) AS distinct_media_sources,
-  COUNTIF(campaign_id IS NULL) AS null_campaign_id,
-  COUNTIF(media_source IS NULL) AS null_media_source
-FROM `mornhouse-test-environment.test_app_dataset.cost_table`;
-```
-
-**Результат (базові метрики):**
+**Query 1 — базові метрики:** `sql/01_profiling.sql` — секція `cost_table`
 | min_date | max_date | row_count | distinct_apps | distinct_campaigns | distinct_media_sources | null_campaign_id | null_media_source |
 |---|---|---|---|---|---|---|---|
 | 2026-06-01 | 2026-07-26 | 5253424 | 1 | 48 | 1 | 0 | 0 |
 
-```sql
-SELECT 'cost_table' AS source_table, media_source, COUNT(*) AS row_count
-FROM `mornhouse-test-environment.test_app_dataset.cost_table`
-GROUP BY media_source
-
-UNION ALL
-
-SELECT 'non_org_installs_report' AS source_table, media_source, COUNT(*) AS row_count
-FROM `mornhouse-test-environment.test_app_dataset.non_org_installs_report`
-GROUP BY media_source
-
-ORDER BY source_table, media_source;
-```
-**Результат (звірка media_source з non_org_installs_report):**
+**Query 2 — звірка media_source з non_org_installs_report:**
 | source_table | media_source | row_count |
 |---|---|---|
 | cost_table | googleadwords_int | 5253424 |
@@ -87,20 +57,17 @@ ORDER BY source_table, media_source;
 | non_org_installs_report | unknown | 266054 |
 
 **Висновок:**
-- Діапазон дат повністю збігається з non_org_installs_report — довіряємо заявленому періоду (2026-06-01 – 2026-07-26).
-- row_count значно більший за installs (5.25 млн vs 777 тис.) — очікувано: grain тут campaign × adset × geo × day, а не одна подія інсталу.
-- distinct_campaigns = 48 vs 54 в installs — розбіжність 6 кампаній, причина ще не з'ясована.
-- distinct_media_sources = 1 vs 3 в installs — критична розбіжність. cost_table покриває лише `googleadwords_int`. `other` і `unknown` в installs, імовірно, не реальні платні мережі, а службові категорії атрибуції (гіпотеза).
-- `campaign_id` і `media_source` структурно чисті (без NULL) в cost_table.
+- Діапазон дат повністю збігається з non_org_installs_report.
+- row_count значно більший за installs — grain тут campaign × adset × geo × day.
+- distinct_campaigns = 48 vs 54 в installs — розбіжність, причина не з'ясована.
+- distinct_media_sources = 1 vs 3 в installs — критична розбіжність. cost_table покриває лише `googleadwords_int`. `other`/`unknown` — ймовірно службові категорії атрибуції, не платні мережі (гіпотеза).
+- `campaign_id`/`media_source` структурно чисті (без NULL).
 
-**Гіпотези, що виникли:** див. розділ 3, пункти №3, №4.
+**Гіпотези, що виникли:** розділ 3, №3, №4.
 
-### 2.3 ad_revenue_raw
 ### 2.3 ad_revenue_raw
 
 **Query:** `sql/01_profiling.sql` — секція `ad_revenue_raw`
-
-**Результат:**
 | min_event_date | max_event_date | row_count | distinct_apps | distinct_campaigns | distinct_media_sources | null_campaign_id |
 |---|---|---|---|---|---|---|
 | 2026-06-01 | 2026-07-26 | 5955170 | 1 | 137 | 3 | 351694 |
@@ -110,34 +77,69 @@ ORDER BY source_table, media_source;
 | 0 | 5955170 | 268249 | 0 | 242204 | 377612 | 0 | 5955170 |
 
 **Висновок:**
-- Діапазон дат збігається з іншими таблицями (2026-06-01 – 2026-07-26).
-- Grain: одна подія показу/завершення реклами — звідси набагато більший обсяг (5.95 млн), ніж у installs (777 тис.): один пристрій генерує багато рекламних подій за період.
-- `null_campaign_id = 351694` (~5.9%) — на відміну від installs і cost_table, тут є NULL. Частина подій доходу не атрибутована до жодної кампанії; ці рядки випадуть з campaign-level вітрини при INNER JOIN, якщо не обробити явно.
-- **`distinct_campaigns = 137`**, що більше за 54 (installs) і 48 (cost_table). Гіпотеза: `event_date` — дата події доходу, а не інсталу, тому дохід у червні-липні можуть генерувати користувачі, які встановили застосунок ще до початку періоду даних (1 червня) через кампанії, відсутні в installs/cost за цей проміжок. Це потенційна пастка "порівняння когорт різної зрілості" — критично для розділу 6 (Metric Definitions).
-- Кандидати на join-ключ: `analytics_installation_id` і `appsflyer_id` — 100% NULL (узгоджено з non_org_installs_report). `advertising_id` — 242204 distinct, 6.3% NULL. **`firebase_analytic_app_id` — 268249 distinct, 0% NULL**, узгоджується з поведінкою цього поля в installs (~22 події на пристрій у середньому) — підтверджує гіпотезу №5.
+- Діапазон дат збігається з іншими таблицями.
+- Grain: одна подія показу/завершення реклами — звідси набагато більший обсяг.
+- `null_campaign_id = 351694` (~5.9%) — частина подій доходу не атрибутована.
+- `distinct_campaigns = 137` > 54 (installs), > 48 (cost) — гіпотеза про когорти різної зрілості (дохід від installs до початку періоду).
+- `firebase_analytic_app_id` — 268249 distinct, 0% NULL, узгоджено з installs (~22 події на пристрій) — підтверджує гіпотезу №5. `analytics_installation_id`/`appsflyer_id` — 100% NULL.
 
-**Гіпотези, що виникли:** див. розділ 3, пункти №5 (додатково підтверджено), №6 (новий).
+**Гіпотези, що виникли:** розділ 3, №5 (додатково підтверджено), №6 (новий).
 
 ### 2.4 in_app_events_report
-*(TODO)*
+
+**Query 1 — базові метрики:** `sql/01_profiling.sql` — секція `in_app_events_report`
+| min_event_date | max_event_date | row_count | distinct_apps | distinct_campaigns | distinct_media_sources | null_campaign_id |
+|---|---|---|---|---|---|---|
+| 2026-06-01 | 2026-07-26 | 24963 | 1 | 91 | 3 | 2713 |
+
+| firebase_app_id_non_null | firebase_app_id_distinct | advertising_id_non_null | advertising_id_distinct | distinct_event_names |
+|---|---|---|---|---|
+| 23943 (95.9%) | 14115 | 21484 (86.1%) | 12680 | 10 |
+
+**Query 2 — дохід по типах подій:**
+| event_name | row_count | total_revenue | null_revenue | voided_count |
+|---|---|---|---|---|
+| trial_started | 6866 | — | 6866 | 0 |
+| subscription_billing_grace | 6179 | — | 6179 | 0 |
+| trial_churned | 6064 | — | 6064 | 0 |
+| subscription_renewed | 2021 | 41098.97 | 0 | 0 |
+| trial_canceled | 2017 | — | 2017 | 0 |
+| trial_converted | 679 | 21308.24 | 0 | 0 |
+| subscription_canceled | 512 | — | 512 | 0 |
+| subscription_churned | 422 | — | 422 | 0 |
+| subscription_refunded | 189 | −6014.65 | 0 | 189 |
+| no_trial_sub_started | 14 | 95.83 | 0 | 0 |
+
+**Висновок:**
+- Grain: одна подія в життєвому циклі підписки/покупки. Малий обсяг — очікувано.
+- `null_campaign_id` — найвищий серед усіх таблиць (~10.9%).
+- `distinct_campaigns = 91` — точка в послідовності 54 → 48 → 91 → 137 (гіпотеза №6).
+- Лише 4 з 10 `event_name` несуть дохід; `SUM(event_revenue_usd)` без фільтрів коректний (NULL ігнорується, refund зі знаком мінус).
+- Перевірка дублікатів рядків — розділ 2.5.
+
+**Гіпотези, що виникли:** розділ 3, №6.
 
 ## 2.5 Перевірка якості даних (Data Quality Checks)
 
-На відміну від профайлінгу (2.1–2.4), який досліджує структуру кожної таблиці окремо,
-цей розділ — цілеспрямована перевірка надійності конкретних полів, які підуть у розрахунок
-cost/revenue/profit у фінальній вітрині. Виконується після завершення profiling усіх таблиць.
+Цілеспрямована перевірка надійності конкретних полів, які підуть у розрахунок cost/revenue/profit, виконана після завершення профайлінгу всіх таблиць.
 
-Перелік перевірок (для ad_revenue_raw, in_app_events_report, cost_table):
+### Дублікати рядків (in_app_events_report)
 
-- **Дублікати рядків** — чи не задвоюються події доходу (напр. через повторну відправку SDK)?
-  Класична пастка: подвійний облік доходу через дублікати в revenue-таблицях.
-- **Від'ємні/нульові/аномальні значення** — cost_usd, event_revenue_usd < 0 чи екстремальні.
-- **Логічна узгодженість дат** — чи event_date/timestamp завжди >= install_date.
-- **Повнота ключів з'єднання** — NULL-rate campaign_id/media_source саме в revenue-таблицях.
-- **Коректність конвертації валют** — чи cost/cost_usd співвідношення адекватне.
+**Query 1 (крок 1) — групування лише по order_id:** `sql/01_profiling.sql`
+Сотні order_id з 4-5 рядками — виявилось, що це стадії життєвого циклу підписки, не дублікати.
 
-*(Результати — заповнити по мірі виконання)*
----
+**Query 2 (крок 2) — точний natural key (order_id + event_name + timestamp + event_revenue_usd):**
+Виявила справжні дублікати рядків, включно з revenue-bearing подіями.
+
+**Query 3 — кількісна оцінка впливу на дохід:** TODO, наступний крок.
+
+**Висновок:** підтверджена пастка "подвійний облік доходу" — потрібна дедуплікація перед `SUM` у фінальній вітрині.
+
+**Інші перевірки чеклиста (TODO):**
+- Від'ємні/аномальні значення в cost_usd, event_revenue_usd
+- Логічна узгодженість дат (event_date >= install_date)
+- Дублікати рядків в ad_revenue_raw
+- Коректність конвертації валют (cost vs cost_usd)
 
 ## 3. Журнал гіпотез (Hypothesis Log)
 

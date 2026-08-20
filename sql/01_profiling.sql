@@ -102,5 +102,45 @@ FROM `mornhouse-test-environment.test_app_dataset.ad_revenue_raw`;
 -- ============================================================
 -- in_app_events_report
 -- Інтерпретація — README.md, розділ 2.4
--- (TODO — наступний крок)
+-- -- ============================================================
+
+-- 1. Базові метрики + кандидати на ключ + кількість типів подій
+SELECT
+  MIN(event_date) AS min_event_date,
+  MAX(event_date) AS max_event_date,
+  COUNT(*) AS row_count,
+  COUNT(DISTINCT app_id) AS distinct_apps,
+  COUNT(DISTINCT campaign_id) AS distinct_campaigns,
+  COUNT(DISTINCT media_source) AS distinct_media_sources,
+  COUNTIF(campaign_id IS NULL) AS null_campaign_id,
+  COUNTIF(firebase_analytic_app_id IS NOT NULL) AS firebase_app_id_non_null,
+  COUNT(DISTINCT firebase_analytic_app_id) AS firebase_app_id_distinct,
+  COUNTIF(advertising_id IS NOT NULL) AS advertising_id_non_null,
+  COUNT(DISTINCT advertising_id) AS advertising_id_distinct,
+  COUNT(DISTINCT event_name) AS distinct_event_names
+FROM `mornhouse-test-environment.test_app_dataset.in_app_events_report`;
+-- Результат: 2026-06-01 – 2026-07-26, 24963 рядки (набагато менше за інші таблиці —
+-- очікувано, покупки рідкісні), 1 app, 91 кампанія, 3 media_source,
+-- null_campaign_id = 2713 (~10.9% — найвищий NULL-rate серед усіх таблиць).
+-- firebase_analytic_app_id: 95.9% заповнено, 14115 distinct.
+-- advertising_id: 86.1% заповнено, 12680 distinct. 10 типів подій.
+
+-- 2. Розбір доходу по типах подій
+SELECT
+  event_name,
+  COUNT(*) AS row_count,
+  SUM(event_revenue_usd) AS total_revenue,
+  COUNTIF(event_revenue_usd IS NULL) AS null_revenue,
+  COUNTIF(voided_reason IS NOT NULL) AS voided_count
+FROM `mornhouse-test-environment.test_app_dataset.in_app_events_report`
+GROUP BY event_name
+ORDER BY row_count DESC;
+-- Результат: лише 4 з 10 типів подій несуть дохід —
+--   subscription_renewed:    +41098.97 (2021 подій)
+--   trial_converted:         +21308.24 (679 подій)
+--   no_trial_sub_started:       +95.83 (14 подій)
+--   subscription_refunded:    −6014.65 (189 подій, усі voided)
+-- Решта 6 типів (trial_started, subscription_billing_grace, trial_churned,
+-- trial_canceled, subscription_canceled, subscription_churned) — lifecycle-події,
+-- event_revenue_usd =
 -- ============================================================
