@@ -10,9 +10,8 @@
 - **Мета:** побудувати єдину вітрину, яка показує прибутковість рекламних кампаній Mornhouse (cost vs revenue), і на її основі — дашборд у Tableau.
 - **Що вважаємо "прибутковою кампанією":** визначення метрики буде зафіксовано в розділі 6, коли стане зрозуміло, які дані реально доступні для розрахунку доходу.
 - **Джерела:** BigQuery, проєкт `mornhouse-test-environment`, датасет `test_app_dataset`, доступ viewer.
-- **Обмеження середовища:** sandbox-режим без білінгу → ліміт на обсяг сканованих даних. Уникаємо `SELECT *` на великих таблицях, спершу перевіряємо обсяг агрегатними запитами.
 - **Заявлений період даних:** червень–липень 2026 (буде звірено з фактичними даними в кожній таблиці).
-
+**Примітка щодо методу:** у реальному проєкті першим кроком був би запит документації/data dictionary та контакту власника даних, перш ніж витрачати час на реверс-інжиніринг структури й бізнес-логіки. У межах цього тестового завдання - самостійний data profiling з нуля.
 ---
 
 ## 2. Аудит вихідних даних (Data Profiling)
@@ -26,20 +25,24 @@
 |---|---|---|---|---|
 | 2026-06-01 | 2026-07-26 | 777724 | 54 | 3 |
 
-**Query 2 — аудит кандидатів на join-ключ:**
-| row_count | analytics_installation_id_non_null | analytics_installation_id_distinct | advertising_id_non_null | advertising_id_distinct | firebase_app_id_non_null | firebase_app_id_distinct | appsflyer_id_non_null | appsflyer_id_distinct |
-|---|---|---|---|---|---|---|---|---|
-| 777724 | 0 | 0 | 489544 | 473477 | 777724 | 777724 | 0 | 0 |
+**Query 2 — аудит кандидатів на join-ключ (з відсотками):**
+| row_count | analytics_installation_id_non_null | analytics_installation_id_pct | analytics_installation_id_distinct | advertising_id_non_null | advertising_id_pct | advertising_id_distinct |
+|---|---|---|---|---|---|---|
+| 777724 | 0 | 0.0% | 0 | 489544 | 62.9% | 473477 |
+
+| firebase_app_id_non_null | firebase_app_id_pct | firebase_app_id_distinct | appsflyer_id_non_null | appsflyer_id_pct | appsflyer_id_distinct |
+|---|---|---|---|---|---|
+| 777724 | 100.0% | 777724 | 0 | 0.0% | 0 |
 
 **Висновок:**
 - Grain: одна подія атрибутованого інсталу.
 - Діапазон дат (2026-06-01 – 2026-07-26) — базовий орієнтир для звірки з іншими таблицями.
 - `analytics_installation_id` і `appsflyer_id` — 100% NULL, непридатні як join-ключ.
-- `advertising_id` — 63% заповнений, робочий, але з відчутною втратою.
+- `advertising_id` — заповнений на 62.9%, робочий, але з відчутною втратою.
 - **`firebase_analytic_app_id` — 100% заповнений, унікальний на рядок. Найсильніший кандидат на join-ключ рівня пристрою.**
 - 54 кампанії, 3 media_source — орієнтир для звірки з cost_table.
 
-**Гіпотези, що виникли:** розділ 3, №1 (оновлено), №5 (новий).
+**Гіпотези, що виникли:** розділ 3, №1 , №2.
 
 ### 2.2 cost_table
 
@@ -68,33 +71,35 @@
 ### 2.3 ad_revenue_raw
 
 **Query:** `sql/01_profiling.sql` — секція `ad_revenue_raw`
-| min_event_date | max_event_date | row_count | distinct_apps | distinct_campaigns | distinct_media_sources | null_campaign_id |
-|---|---|---|---|---|---|---|
-| 2026-06-01 | 2026-07-26 | 5955170 | 1 | 137 | 3 | 351694 |
-
-| distinct_analytics_installation_id | null_analytics_installation_id | distinct_firebase_app_id | null_firebase_app_id | distinct_advertising_id | null_advertising_id | distinct_appsflyer_id | null_appsflyer_id |
+**Результат:**
+| min_event_date | max_event_date | row_count | distinct_apps | distinct_campaigns | distinct_media_sources | null_campaign_id | null_campaign_id_pct |
 |---|---|---|---|---|---|---|---|
-| 0 | 5955170 | 268249 | 0 | 242204 | 377612 | 0 | 5955170 |
+| 2026-06-01 | 2026-07-26 | 5955170 | 1 | 137 | 3 | 351694 | 5.9% |
+
+| distinct_analytics_installation_id | null_analytics_installation_id_pct | distinct_firebase_app_id | null_firebase_app_id_pct | distinct_advertising_id | null_advertising_id_pct | distinct_appsflyer_id | null_appsflyer_id_pct |
+|---|---|---|---|---|---|---|---|
+| 0 | 100.0% | 268249 | 0.0% | 242204 | 6.3% | 0 | 100.0% |
 
 **Висновок:**
 - Діапазон дат збігається з іншими таблицями.
 - Grain: одна подія показу/завершення реклами — звідси набагато більший обсяг.
 - `null_campaign_id = 351694` (~5.9%) — частина подій доходу не атрибутована.
 - `distinct_campaigns = 137` > 54 (installs), > 48 (cost) — гіпотеза про когорти різної зрілості (дохід від installs до початку періоду).
-- `firebase_analytic_app_id` — 268249 distinct, 0% NULL, узгоджено з installs (~22 події на пристрій) — підтверджує гіпотезу №5. `analytics_installation_id`/`appsflyer_id` — 100% NULL.
+- `firebase_analytic_app_id` — 268249 distinct, 0% NULL, узгоджено з installs (~22 події на пристрій) — підтверджує гіпотезу №2. `analytics_installation_id`/`appsflyer_id` — 100% NULL.
 
-**Гіпотези, що виникли:** розділ 3, №5 (додатково підтверджено), №6 (новий).
+**Гіпотези, що виникли:** розділ 3, №2 (додатково підтверджено), №6 .
 
 ### 2.4 in_app_events_report
 
 **Query 1 — базові метрики:** `sql/01_profiling.sql` — секція `in_app_events_report`
-| min_event_date | max_event_date | row_count | distinct_apps | distinct_campaigns | distinct_media_sources | null_campaign_id |
-|---|---|---|---|---|---|---|
-| 2026-06-01 | 2026-07-26 | 24963 | 1 | 91 | 3 | 2713 |
+**Результат:**
+| min_event_date | max_event_date | row_count | distinct_apps | distinct_campaigns | distinct_media_sources | null_campaign_id | null_campaign_id_pct |
+|---|---|---|---|---|---|---|---|
+| 2026-06-01 | 2026-07-26 | 24963 | 1 | 91 | 3 | 2713 | 10.9% |
 
-| firebase_app_id_non_null | firebase_app_id_distinct | advertising_id_non_null | advertising_id_distinct | distinct_event_names |
-|---|---|---|---|---|
-| 23943 (95.9%) | 14115 | 21484 (86.1%) | 12680 | 10 |
+| firebase_app_id_non_null | firebase_app_id_pct | firebase_app_id_distinct | advertising_id_non_null | advertising_id_pct | advertising_id_distinct | distinct_event_names |
+|---|---|---|---|---|---|---|
+| 23943 | 95.9% | 14115 | 21484 | 86.1% | 12680 | 10 |
 
 **Query 2 — дохід по типах подій:**
 | event_name | row_count | total_revenue | null_revenue | voided_count |
@@ -146,10 +151,10 @@
 | # | Гіпотеза | Як перевірено | Результат | Статус |
 |---|---|---|---|---|
 | 1 | `analytics_installation_id` — Firebase Analytics ID, не завжди проставляється в момент інсталу, тому NULL структурно | Перевірено NULL-rate на non_org_installs_report і ad_revenue_raw | 100% NULL в обох таблицях (777724/777724 та 5955170/5955170) | емпірично підтверджено (поле системно порожнє); причина (SDK timing) — припущення, документально не підтверджена. Перевірити ще в in_app_events_report |
-| 2 | Вітрина будується на рівні grain = campaign (+ media_source, + date), а не на рівні окремого користувача | Логічний висновок з формулювання задачі ("які кампанії прибуткові") | — | робоче припущення, переглянути якщо знадобиться LTV/cohort розріз |
+| 2 |`firebase_analytic_app_id` — стабільний device-level ідентифікатор, придатний як join-ключ між installs і revenue-таблицями | Перевірено заповненість і кардинальність на non_org_installs_report і ad_revenue_raw | 100% заповнено в обох; унікальний на рядок в installs (777724/777724), ~22 повтори на значення в ad_revenue_raw (268249 distinct / 5955170 рядків) — узгоджена поведінка device ID | сильно підтверджено за формою; реальний value-level overlap між таблицями ще не перевірено (Join Key Mapping) 
 | 3 | campaign_id в cost_table і non_org_installs_report — різні системи нумерації (ad network ID vs attribution ID) | Порівняно кількість distinct: 48 (cost) vs 54 (installs) | Числа близькі, але не рівні — точний overlap множин значень ще не перевірено запитом | частково перевірено — потрібен прямий overlap-запит у Join Key Mapping |
 | 4 | media_source = "other"/"unknown" в non_org_installs_report — службові категорії атрибуції, а не реальні платні мережі з відсутнім cost-трекінгом | Перевірити campaign_id/інші поля у рядків з цими значеннями media_source | — | потребує перевірки |
-| 5 | `firebase_analytic_app_id` — стабільний device-level ідентифікатор, придатний як join-ключ між installs і revenue-таблицями | Перевірено заповненість і кардинальність на non_org_installs_report і ad_revenue_raw | 100% заповнено в обох; унікальний на рядок в installs (777724/777724), ~22 повтори на значення в ad_revenue_raw (268249 distinct / 5955170 рядків) — узгоджена поведінка device ID | сильно підтверджено за формою; реальний value-level overlap між таблицями ще не перевірено (Join Key Mapping) |
+| 5 | Вітрина будується на рівні grain = campaign (+ media_source, + date), а не на рівні окремого користувача | Логічний висновок з формулювання задачі ("які кампанії прибуткові") | — | робоче припущення, переглянути якщо знадобиться LTV/cohort розріз |
 | 6 | distinct_campaigns у ad_revenue_raw (137) перевищує installs (54) і cost_table (48) через дохід від installs, здійснених до початку періоду даних (до 2026-06-01) | Логічний висновок з різниці показників; прямий запит (install_date для campaign_id, наявних лише в ad_revenue_raw) ще не виконано | — | потребує перевірки |
 ---
 
