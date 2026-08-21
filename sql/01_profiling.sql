@@ -9,26 +9,39 @@
 -- Інтерпретація — README.md, розділ 2.1
 -- ============================================================
 
--- 1. Базові метрики: діапазон дат, обсяг, кампанії, джерела трафіку
+-- 1. Базові метрики: діапазон дат, обсяг, кампанії, джерела трафіку, повнота campaign_id
 SELECT
   MIN(install_date) AS min_install_date,
   MAX(install_date) AS max_install_date,
   COUNT(*) AS row_count,
   COUNT(DISTINCT campaign_id) AS distinct_campaigns,
-  COUNT(DISTINCT media_source) AS distinct_media_sources
+  COUNT(DISTINCT media_source) AS distinct_media_sources,
+  COUNTIF(campaign_id IS NULL) AS null_campaign_id,
+  ROUND(COUNTIF(campaign_id IS NULL) / COUNT(*) * 100, 1) AS null_campaign_id_pct
 FROM `mornhouse-test-environment.test_app_dataset.non_org_installs_report`;
 -- Результат: 2026-06-01 – 2026-07-26, 777724 рядки, 54 кампанії, 3 media_source.
+-- КРИТИЧНО: null_campaign_id = 448708 (57.7%) — більшість install-подій не прив'язані
+-- до жодної кампанії. Це не помилка, а структурна межа даних — рахунок кампаній (54)
+-- стосується лише тих рядків, де campaign_id взагалі є.
 
 -- 2. Аудит кандидатів на join-ключ
 SELECT
   COUNT(*) AS row_count,
+
   COUNTIF(analytics_installation_id IS NOT NULL) AS analytics_installation_id_non_null,
+  ROUND(COUNTIF(analytics_installation_id IS NOT NULL) / COUNT(*) * 100, 1) AS analytics_installation_id_pct,
   COUNT(DISTINCT analytics_installation_id) AS analytics_installation_id_distinct,
+
   COUNTIF(advertising_id IS NOT NULL) AS advertising_id_non_null,
+  ROUND(COUNTIF(advertising_id IS NOT NULL) / COUNT(*) * 100, 1) AS advertising_id_pct,
   COUNT(DISTINCT advertising_id) AS advertising_id_distinct,
+
   COUNTIF(firebase_analytic_app_id IS NOT NULL) AS firebase_app_id_non_null,
+  ROUND(COUNTIF(firebase_analytic_app_id IS NOT NULL) / COUNT(*) * 100, 1) AS firebase_app_id_pct,
   COUNT(DISTINCT firebase_analytic_app_id) AS firebase_app_id_distinct,
+
   COUNTIF(appsflyer_id IS NOT NULL) AS appsflyer_id_non_null,
+  ROUND(COUNTIF(appsflyer_id IS NOT NULL) / COUNT(*) * 100, 1) AS appsflyer_id_pct,
   COUNT(DISTINCT appsflyer_id) AS appsflyer_id_distinct
 FROM `mornhouse-test-environment.test_app_dataset.non_org_installs_report`;
 -- Результат: analytics_installation_id і appsflyer_id — 100% NULL.
@@ -81,14 +94,23 @@ SELECT
   COUNT(DISTINCT campaign_id) AS distinct_campaigns,
   COUNT(DISTINCT media_source) AS distinct_media_sources,
   COUNTIF(campaign_id IS NULL) AS null_campaign_id,
+  ROUND(COUNTIF(campaign_id IS NULL) / COUNT(*) * 100, 1) AS null_campaign_id_pct,
+
   COUNT(DISTINCT analytics_installation_id) AS distinct_analytics_installation_id,
   COUNTIF(analytics_installation_id IS NULL) AS null_analytics_installation_id,
+  ROUND(COUNTIF(analytics_installation_id IS NULL) / COUNT(*) * 100, 1) AS null_analytics_installation_id_pct,
+
   COUNT(DISTINCT firebase_analytic_app_id) AS distinct_firebase_analytic_app_id,
   COUNTIF(firebase_analytic_app_id IS NULL) AS null_firebase_analytic_app_id,
+  ROUND(COUNTIF(firebase_analytic_app_id IS NULL) / COUNT(*) * 100, 1) AS null_firebase_analytic_app_id_pct,
+
   COUNT(DISTINCT advertising_id) AS distinct_advertising_id,
   COUNTIF(advertising_id IS NULL) AS null_advertising_id,
+  ROUND(COUNTIF(advertising_id IS NULL) / COUNT(*) * 100, 1) AS null_advertising_id_pct,
+
   COUNT(DISTINCT appsflyer_id) AS distinct_appsflyer_id,
-  COUNTIF(appsflyer_id IS NULL) AS null_appsflyer_id
+  COUNTIF(appsflyer_id IS NULL) AS null_appsflyer_id,
+  ROUND(COUNTIF(appsflyer_id IS NULL) / COUNT(*) * 100, 1) AS null_appsflyer_id_pct
 FROM `mornhouse-test-environment.test_app_dataset.ad_revenue_raw`;
 
 -- Результат: 2026-06-01 – 2026-07-26, 5955170 рядків, 1 app, 137 кампаній (!),
@@ -113,10 +135,16 @@ SELECT
   COUNT(DISTINCT campaign_id) AS distinct_campaigns,
   COUNT(DISTINCT media_source) AS distinct_media_sources,
   COUNTIF(campaign_id IS NULL) AS null_campaign_id,
+  ROUND(COUNTIF(campaign_id IS NULL) / COUNT(*) * 100, 1) AS null_campaign_id_pct,
+
   COUNTIF(firebase_analytic_app_id IS NOT NULL) AS firebase_app_id_non_null,
+  ROUND(COUNTIF(firebase_analytic_app_id IS NOT NULL) / COUNT(*) * 100, 1) AS firebase_app_id_pct,
   COUNT(DISTINCT firebase_analytic_app_id) AS firebase_app_id_distinct,
+
   COUNTIF(advertising_id IS NOT NULL) AS advertising_id_non_null,
+  ROUND(COUNTIF(advertising_id IS NOT NULL) / COUNT(*) * 100, 1) AS advertising_id_pct,
   COUNT(DISTINCT advertising_id) AS advertising_id_distinct,
+
   COUNT(DISTINCT event_name) AS distinct_event_names
 FROM `mornhouse-test-environment.test_app_dataset.in_app_events_report`;
 -- Результат: 2026-06-01 – 2026-07-26, 24963 рядки (набагато менше за інші таблиці —
