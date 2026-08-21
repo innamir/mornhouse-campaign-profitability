@@ -30,7 +30,7 @@ iap_revenue_agg AS (
   GROUP BY firebase_analytic_app_id
 ),
 
--- Крок 4: install-level — анкер це таблиця 1, доєднуємо revenue по пристрою (LEFT JOIN)
+-- Крок 4: install-level — анкер non_org_installs_report, доєднуємо revenue по пристрою (LEFT JOIN)
 installs_with_revenue AS (
   SELECT
     i.campaign_id,
@@ -43,7 +43,7 @@ installs_with_revenue AS (
   LEFT JOIN iap_revenue_agg ir ON i.firebase_analytic_app_id = ir.firebase_analytic_app_id
 ),
 
--- Крок 5: агрегуємо install-level до рівня кампанії
+-- Крок 5: згортаємо install-level до рівня кампанії
 campaign_agg AS (
   SELECT
     campaign_id,
@@ -65,7 +65,7 @@ cost_agg AS (
   GROUP BY campaign_id, media_source
 )
 
--- Крок 7 (оновлено): LEFT JOIN — лишаємо ВСІ 48 кампаній з cost_table
+-- Крок 7: LEFT JOIN — лишаємо ВСІ 48 кампаній з cost_table
 SELECT
   c.campaign_id,
   c.media_source,
