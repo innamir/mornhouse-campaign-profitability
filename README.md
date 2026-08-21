@@ -230,40 +230,41 @@
 
 ## 6. Визначення метрик (Metric Definitions)
 
-*(заповнити, коли зрозуміло, які джерела доходу доступні і як вони рахуються)*
+## 6. Визначення метрик (Metric Definitions)
 
-- **Cost** =
-- **Revenue** (ad revenue + in-app purchases) =
-- **Profit** =
-- **ROAS** =
-- Інші метрики (CPI, ARPU тощо):
+Query reference: `sql/03_mart.sql`
 
----
+| Метрика | Формула | Опис |
+|---|---|---|
+| Cost | SUM(cost_usd) по campaign_id + media_source | Загальні витрати на кампанію за весь період (з cost_table) |
+| Total Revenue | total_ad_revenue + total_iap_revenue | Дохід, атрибутований інсталам кампанії: реклама (ad_revenue_raw) + підписки/покупки (in_app_events_report), очищені від дублікатів |
+| Profit | Total Revenue − Cost | Абсолютний прибуток - збиток кампанії в доларах |
+| ROAS | Total Revenue / Cost | Скільки повертається на кожен вкладений долар. |
+| CAC | Cost / install_count | Середня вартість залучення одного інсталу.|
+
 
 ## 7. Фінальна схема вітрини (Mart Schema)
 
-*(заповнити після побудови)*
+Query reference: `sql/03_mart.sql`
+Grain: один рядок = одна кампанія (campaign_id + media_source). Рядків: 48.
 
 | Поле | Тип | Опис |
 |---|---|---|
-| | | |
+| campaign_id | INT64 | Ідентифікатор кампанії (з cost_table) |
+| media_source | STRING | Джерело трафіку (в даних представлено лише googleadwords_int) |
+| total_cost_usd | FLOAT64 | Сумарні витрати на кампанію за весь період (з cost_table) |
+| install_count | INT64 | Кількість інсталів, атрибутованих кампанії. 0 для 2 кампаній без відповідних інсталів у non_org_installs_report |
+| cac | FLOAT64 | Вартість залучення одного інсталу (total_cost_usd / install_count). NULL, якщо install_count = 0 |
+| total_ad_revenue | FLOAT64 | Сумарний дохід від реклами (ad_revenue_raw), атрибутований інсталам кампанії |
+| total_iap_revenue | FLOAT64 | Сумарний дохід від підписок/покупок (in_app_events_report), очищений від дублікатів; повернення (refund) вже враховані як від'ємні значення |
+| total_revenue | FLOAT64 | total_ad_revenue + total_iap_revenue |
+| profit | FLOAT64 | total_revenue − total_cost_usd |
+| roas | FLOAT64 | total_revenue / total_cost_usd. NULL, якщо total_cost_usd = 0 |
 
 ---
 
-## 8. Журнал запитів (SQL Query Log)
 
-Хронологічний список усіх значущих запитів із коротким коментарем навіщо він і що показав.
-
-1. **Профілювання non_org_installs_report (grain, дати, обсяг, кандидати на ключ)** — див. 2.1
-2. **Перевірка NULL-rate analytics_installation_id** — див. 2.1.
-
-3. **Профілювання cost_table (grain, дати, обсяг, NULL-rate campaign_id/media_source)** — див. 2.2.
-4. **Звірка значень media_source між cost_table і non_org_installs_report** — див. 2.2.
-6. **Профілювання ad_revenue_raw (grain, дати, обсяг, кандидати на ключ)** — див. 2.3.
-
----
-
-## 9. Дашборд у Tableau
+## 8. Дашборд у Tableau
 
 *(заповнити на етапі побудови дашборду)*
 
@@ -273,6 +274,6 @@
 
 ---
 
-## 10. Висновки і рекомендації
+## 9. Висновки і рекомендації
 
 *(заповнити в кінці)*

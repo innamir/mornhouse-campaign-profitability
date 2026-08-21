@@ -71,6 +71,7 @@ SELECT
   c.media_source,
   c.total_cost_usd,
   COALESCE(a.install_count, 0) AS install_count,
+  ROUND(c.total_cost_usd / NULLIF(COALESCE(a.install_count, 0), 0), 4) AS cac,
   COALESCE(a.total_ad_revenue, 0) AS total_ad_revenue,
   COALESCE(a.total_iap_revenue, 0) AS total_iap_revenue,
   COALESCE(a.total_ad_revenue, 0) + COALESCE(a.total_iap_revenue, 0) AS total_revenue,
